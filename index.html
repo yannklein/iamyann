@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta name="viewport" content="width=device-width, height=device-height, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<!-- three.js library -->
+		<script src='lib/three.min.js'></script>
+		<script src="lib/ar.js"></script>
+		<script src="lib/WebGL.js"></script>
+		<script src="lib/GLTFLoader.js"></script>
+		<!-- script for popup message -->
+		<script src="lib/sweetalert2.all.min.js"></script>
+		<!-- Include a polyfill for ES6 Promises (optional) for IE11, UC Browser and Android browser support -->
+		<script src="https://cdn.jsdelivr.net/npm/promise-polyfill@8/dist/polyfill.js"></script>
+		<title>I am Yann</title>
+	</head>
+	<body style='margin : 0px; overflow: hidden; font-family: Monospace;'>
+		<!--V 1.1.7-->
+		<script>
+		//////////////////////////////////////////////////////////////////////////////////
+		//		Init
+		//////////////////////////////////////////////////////////////////////////////////
+
+		//Error if not WebGL compatible
+		if ( WEBGL.isWebGLAvailable() === false ) {
+				document.body.appendChild( WEBGL.getWebGLErrorMessage() );
+		}
+
+		// init renderer
+		var renderer	= new THREE.WebGLRenderer({
+			antialias	: true,
+			autoResize : true,
+			alpha: true
+		});
+		renderer.setClearColor(new THREE.Color('lightgrey'), 0);
+		renderer.setPixelRatio( window.devicePixelRatio );
+		renderer.setSize( window.innerWidth, window.innerHeight );
+		renderer.domElement.style.position = 'absolute'
+		renderer.domElement.style.top = '0px'
+		renderer.domElement.style.left = '0px'
+		//renderer.setClearColor(new THREE.Color('lightgrey'), 0)
+		document.body.appendChild( renderer.domElement );
+
+		// array of functions for the rendering loop
+		var onRenderFcts= [];
+
+		// init scene and camera
+
+		var scene = new THREE.Scene();
+		
+		//////////////////////////////////////////////////////////////////////////////////
+		//		Initialize a basic camera
+		//////////////////////////////////////////////////////////////////////////////////
+
+		// Create a camera
+		var camera = new THREE.PerspectiveCamera( 50, window.innerWidth / window.innerHeight, 1, 1500 );
+		scene.add(camera);
+
+		var light = new THREE.AmbientLight( 0xffffff ); // soft white light
+		light.intensity = 0.7;
+		scene.add( light );
+
+		spotLight = new THREE.SpotLight( 0xffffff, 0.7 );
+		spotLight.position.set( -2, 3, 5 );
+		spotLight.angle = 0.5 * Math.PI / 4;
+		spotLight.penumbra = 1;
+		spotLight.decay = 2;
+		spotLight.distance = 2000;
+		// spotLight.castShadow = true;
+		// spotLight.shadow.mapSize.width = 1024;
+		// spotLight.shadow.mapSize.height = 1024;
+		// spotLight.shadow.camera.near = 10;
+		// spotLight.shadow.camera.far = 200;
+		scene.add( spotLight );
+		// lightHelper = new THREE.SpotLightHelper( spotLight );
+		// scene.add( lightHelper );
+
+		////////////////////////////////////////////////////////////////////////////////
+		//          handle arToolkitSource
+		////////////////////////////////////////////////////////////////////////////////
+
+		var arToolkitSource = new THREEx.ArToolkitSource({
+			// to read from the webcam 
+			sourceType : 'webcam'	
+		})
+
+		arToolkitSource.init(function onReady(){
+			onResize()
+		})
+		
+		// handle resize
+		window.addEventListener('resize', function(){
+			onResize()
+		})
+		function onResize(){
+			arToolkitSource.onResizeElement()	
+			arToolkitSource.copyElementSizeTo(renderer.domElement)	
+			if( arToolkitContext.arController !== null ){
+				arToolkitSource.copyElementSizeTo(arToolkitContext.arController.canvas)
+			}	
+		}
+		////////////////////////////////////////////////////////////////////////////////
+		//          initialize arToolkitContext
+		////////////////////////////////////////////////////////////////////////////////
+		
+
+		// create atToolkitContext
+		var arToolkitContext = new THREEx.ArToolkitContext({
+			cameraParametersUrl: THREEx.ArToolkitContext.baseURL + '../data/data/camera_para.dat',
+			detectionMode: 'mono',
+			maxDetectionRate: 30,
+			canvasWidth: 80*3,
+			canvasHeight: 60*3,
+		})
+		// initialize it
+		arToolkitContext.init(function onCompleted(){
+			// copy projection matrix to camera
+			camera.projectionMatrix.copy( arToolkitContext.getProjectionMatrix() );
+		})
+
+		// update artoolkit on every frame
+		onRenderFcts.push(function(){
+			if( arToolkitSource.ready === false )	return
+			arToolkitContext.update( arToolkitSource.domElement )
+		})
+		
+		////////////////////////////////////////////////////////////////////////////////
+		//          Create a ArMarkerControls
+		////////////////////////////////////////////////////////////////////////////////
+		
+		var markerRoot = new THREE.Group
+		scene.add(markerRoot)
+		var artoolkitMarker = new THREEx.ArMarkerControls(arToolkitContext, markerRoot, {
+			//type: 'barcode',
+			//barcodeValue: 'https://magicstickr.github.io/video-base/index.html',
+			type : 'pattern',
+			patternUrl : 'marker/marker_yann.patt'
+		})
+
+		// build a smoothedControls
+		var smoothedRoot = new THREE.Group()
+		scene.add(smoothedRoot)
+		var smoothedControls = new THREEx.ArSmoothedControls(smoothedRoot, {
+			lerpPosition: 0.4,
+			lerpQuaternion: 0.3,
+			lerpScale: 1,
+		})
+		onRenderFcts.push(function(delta){
+			smoothedControls.update(markerRoot);
+		})
+
+		//////////////////////////////////////////////////////////////////////////////////
+		//		Add the objects in the scene
+		//////////////////////////////////////////////////////////////////////////////////
+
+		var arWorldRoot = smoothedRoot;
+
+		var raycaster = new THREE.Raycaster();
+		var mouse = new THREE.Vector2();
+
+		var all = new THREE.Group();
+
+		// Load 3D object
+		var loader = new THREE.GLTFLoader();
+		loader.load('content/scene.glb', function ( gltf ) {
+			//add it to the scene
+			all.add( gltf.scene );
+			//Resize/rescale the 3D Object
+			var bbox = new THREE.Box3().setFromObject(gltf.scene);
+			var cent = bbox.getCenter(new THREE.Vector3());
+			var size = bbox.getSize(new THREE.Vector3());
+			//Rescale the object to normalized space
+			var maxAxis = Math.max(size.x, size.y, size.z);
+			gltf.scene.scale.multiplyScalar(2.0 / maxAxis);
+			bbox.setFromObject(gltf.scene);
+			bbox.getCenter(cent);
+			bbox.getSize(size);
+			//Reposition to 0,halfY,0
+			gltf.scene.position.copy(cent).multiplyScalar(-1);
+			gltf.scene.position.y = (size.y * 0.25);
+			//gltf.scene.rotation.x = -0.1*Math.PI;
+
+		}, undefined, function ( e ) {
+			console.error( e );
+		} );
+
+		//link buttons
+		var geometry = new THREE.PlaneGeometry(0.3, 0.3);
+		var fbLoader = new THREE.TextureLoader().load('content/icon/fb_icon.png', (imgLoader) => {});
+		var twLoader = new THREE.TextureLoader().load('content/icon/tw_icon.png', (imgLoader) => {});
+		var inLoader = new THREE.TextureLoader().load('content/icon/in_icon.png', (imgLoader) => {});
+		var ytbLoader = new THREE.TextureLoader().load('content/icon/ytb_icon.png', (imgLoader) => {});
+		//Load the image into a custom material
+		var fbMaterial = new THREE.MeshLambertMaterial({ map: fbLoader, transparent: true });
+		var twMaterial = new THREE.MeshLambertMaterial({ map: twLoader, transparent: true });
+		var inMaterial = new THREE.MeshLambertMaterial({ map: inLoader, transparent: true });
+		var ytbMaterial = new THREE.MeshLambertMaterial({ map: ytbLoader, transparent: true });
+		
+		var groupButton = new THREE.Group();
+
+		var fb = new THREE.Mesh(geometry, fbMaterial);
+		fb.position.x = -0.6;
+		groupButton.add(fb);
+		var tw = new THREE.Mesh(geometry, twMaterial);
+		tw.position.x = -0.20;
+		tw.position.y = -0.10;
+		groupButton.add(tw);
+		var lkd = new THREE.Mesh(geometry, inMaterial);
+		lkd.position.x = 0.20;
+		lkd.position.y = -0.10;
+		groupButton.add(lkd);
+		var ytb = new THREE.Mesh(geometry, ytbMaterial);
+		ytb.position.x = 0.6;
+		groupButton.add(ytb);
+
+		groupButton.rotation.x = - Math.PI / 2;
+		groupButton.position.z = 0.8;
+		all.add(groupButton);
+
+		all.scale.multiplyScalar(1.5);
+		arWorldRoot.add(all);
+
+		//////////////////////////////////////////////////////////////////////////////////
+		//		render the whole thing on the page
+		//////////////////////////////////////////////////////////////////////////////////
+
+		// render the scene
+		onRenderFcts.push(function(){
+			renderer.render( scene, camera );
+		})
+
+		// run the rendering loop
+		var lastTimeMsec= null
+		requestAnimationFrame(function animate(nowMsec){
+			// keep looping
+			requestAnimationFrame( animate );
+			// measure time
+			lastTimeMsec	= lastTimeMsec || nowMsec-1000/60
+			var deltaMsec	= Math.min(200, nowMsec - lastTimeMsec)
+			lastTimeMsec	= nowMsec
+			// call each update function
+			onRenderFcts.forEach(function(onRenderFct){
+				onRenderFct(deltaMsec/1000, nowMsec/1000)
+			})
+		})
+
+		document.addEventListener( 'mousedown', onDocumentMouseDown, false );
+		document.addEventListener( 'touchstart', onDocumentTouchStart, false );
+
+		function onDocumentTouchStart( event ) {
+
+			event.preventDefault();
+
+			event.clientX = event.touches[0].clientX;
+			event.clientY = event.touches[0].clientY;
+			onDocumentMouseDown( event );
+		}
+
+		function onDocumentMouseDown( event ) {
+
+			event.preventDefault();
+
+			mouse.x = ( event.clientX / window.innerWidth ) * 2 - 1;
+			mouse.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
+
+			raycaster.setFromCamera( mouse, camera );
+
+			var fbArray = [fb];
+			var twArray = [tw];
+			var lkdArray = [lkd];
+			var ytbArray = [ytb];
+
+			var fbIntersects = raycaster.intersectObjects(  fbArray  );
+			var twIntersects = raycaster.intersectObjects(  twArray  );
+			var lkdIntersects = raycaster.intersectObjects( lkdArray );
+			var ytbIntersects = raycaster.intersectObjects( ytbArray );
+
+			if ( fbIntersects.length > 0) {
+				window.location.href = 'https://www.facebook.com/magicstickr';
+			}else if(twIntersects.length > 0){
+				window.location.href = 'https://twitter.com/yannlucklein';
+			}else if(lkdIntersects.length > 0){
+				window.location.href = 'https://www.linkedin.com/in/yann-klein/';
+			}else if(ytbIntersects.length > 0){
+				window.location.href = 'https://www.youtube.com/user/levraiyanou';
+			}
+		}
+
+		</script>
+	</body>
+</html>

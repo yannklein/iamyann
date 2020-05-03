@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<!-- three.js library -->
+		<script src='lib/three.min.js'></script>
+		<script src="lib/ar.js"></script>
+		<script src="lib/WebGL.js"></script>
+		<script src="lib/GLTFLoader.js"></script>
+		<script src="lib/OrbitControls.js"></script>
+		<script type="text/javascript" src="https://cdn.rawgit.com/josephg/noisejs/master/perlin.js"></script>
+		<title>I am Yann</title>
+	</head>
+	<body style='margin : 0px; overflow: hidden; font-family: Monospace;'>
+		V 1.1.4
+		<script>
+		//////////////////////////////////////////////////////////////////////////////////
+		//		Init
+		//////////////////////////////////////////////////////////////////////////////////
+
+		//Error if not WebGL compatible
+		if ( WEBGL.isWebGLAvailable() === false ) {
+				document.body.appendChild( WEBGL.getWebGLErrorMessage() );
+		}
+
+		// init renderer
+		var renderer	= new THREE.WebGLRenderer({
+			antialias	: true,
+			autoResize : true,
+			alpha: true
+		});
+		renderer.setClearColor(new THREE.Color('lightgrey'), 0)
+		renderer.setSize( window.innerWidth, window.innerHeight );
+		renderer.domElement.style.position = 'absolute'
+		renderer.domElement.style.top = '0px'
+		renderer.domElement.style.left = '0px'
+		document.body.appendChild( renderer.domElement );
+
+		// array of functions for the rendering loop
+		var onRenderFcts= [];
+
+		// init arWorldRoot and camera
+
+		var arWorldRoot = new THREE.Scene();
+		
+		//////////////////////////////////////////////////////////////////////////////////
+		//		Initialize a basic camera
+		//////////////////////////////////////////////////////////////////////////////////
+
+		// Create a camera
+		var camera = new THREE.PerspectiveCamera( 50, window.innerWidth / window.innerHeight, 1, 1500 );
+		camera.position.set( 0, 2, 10 );
+		arWorldRoot.add(camera);
+
+		var light = new THREE.AmbientLight( 0xffffff ); // soft white light
+		light.intensity = 0.7;
+		arWorldRoot.add( light );
+
+		spotLight = new THREE.SpotLight( 0xffffff, 0.7 );
+		spotLight.position.set( -2, 3, 5 );
+		spotLight.angle = 0.5 * Math.PI / 4;
+		spotLight.penumbra = 1;
+		spotLight.decay = 2;
+		spotLight.distance = 2000;
+		// spotLight.castShadow = true;
+		// spotLight.shadow.mapSize.width = 1024;
+		// spotLight.shadow.mapSize.height = 1024;
+		// spotLight.shadow.camera.near = 10;
+		// spotLight.shadow.camera.far = 200;
+		arWorldRoot.add( spotLight );
+		lightHelper = new THREE.SpotLightHelper( spotLight );
+		arWorldRoot.add( lightHelper );
+
+
+		// controls
+
+		controls = new THREE.OrbitControls( camera, renderer.domElement );
+
+		//controls.addEventListener( 'change', render ); // call this only in static arWorldRoots (i.e., if there is no animation loop)
+
+		controls.enableDamping = true; // an animation loop is required when either damping or auto-rotation are enabled
+		controls.dampingFactor = 0.25;
+
+		controls.screenSpacePanning = false;
+
+		controls.minDistance = 0;
+		controls.maxDistance = 500;
+
+		controls.maxPolarAngle = Math.PI / 2;
+
+		//////////////////////////////////////////////////////////////////////////////////
+		//		Add the objects in the arWorldRoot
+		//////////////////////////////////////////////////////////////////////////////////
+
+		var raycaster = new THREE.Raycaster();
+		var mouse = new THREE.Vector2();
+
+		var all = new THREE.Group();
+
+		// Load 3D object
+		var loader = new THREE.GLTFLoader();
+		loader.load('content/scene.glb', function ( gltf ) {
+			//add it to the scene
+			all.add( gltf.scene );
+			//Resize/rescale the 3D Object
+			var bbox = new THREE.Box3().setFromObject(gltf.scene);
+			var cent = bbox.getCenter(new THREE.Vector3());
+			var size = bbox.getSize(new THREE.Vector3());
+			//Rescale the object to normalized space
+			var maxAxis = Math.max(size.x, size.y, size.z);
+			gltf.scene.scale.multiplyScalar(2.0 / maxAxis);
+			bbox.setFromObject(gltf.scene);
+			bbox.getCenter(cent);
+			bbox.getSize(size);
+			//Reposition to 0,halfY,0
+			gltf.scene.position.copy(cent).multiplyScalar(-1);
+			gltf.scene.position.y = (size.y * 0.25);
+			//gltf.scene.rotation.x = -0.1*Math.PI;
+
+		}, undefined, function ( e ) {
+			console.error( e );
+		} );
+
+		//link buttons
+		var geometry = new THREE.PlaneGeometry(0.3, 0.3);
+		var fbLoader = new THREE.TextureLoader().load('content/icon/fb_icon.png', (imgLoader) => {});
+		var twLoader = new THREE.TextureLoader().load('content/icon/tw_icon.png', (imgLoader) => {});
+		var inLoader = new THREE.TextureLoader().load('content/icon/in_icon.png', (imgLoader) => {});
+		var ytbLoader = new THREE.TextureLoader().load('content/icon/ytb_icon.png', (imgLoader) => {});
+		//Load the image into a custom material
+		var fbMaterial = new THREE.MeshLambertMaterial({ map: fbLoader, transparent: true });
+		var twMaterial = new THREE.MeshLambertMaterial({ map: twLoader, transparent: true });
+		var inMaterial = new THREE.MeshLambertMaterial({ map: inLoader, transparent: true });
+		var ytbMaterial = new THREE.MeshLambertMaterial({ map: ytbLoader, transparent: true });
+		
+		var groupButton = new THREE.Group();
+
+		var fb = new THREE.Mesh(geometry, fbMaterial);
+		fb.position.x = -0.6;
+		groupButton.add(fb);
+		var tw = new THREE.Mesh(geometry, twMaterial);
+		tw.position.x = -0.20;
+		tw.position.y = -0.10;
+		groupButton.add(tw);
+		var lkd = new THREE.Mesh(geometry, inMaterial);
+		lkd.position.x = 0.20;
+		lkd.position.y = -0.10;
+		groupButton.add(lkd);
+		var ytb = new THREE.Mesh(geometry, ytbMaterial);
+		ytb.position.x = 0.6;
+		groupButton.add(ytb);
+
+		groupButton.rotation.x = - Math.PI / 2;
+		groupButton.position.z = 0.8;
+		all.add(groupButton);
+
+		all.scale.multiplyScalar(1.5);
+		arWorldRoot.add(all);
+
+
+		/////////////////////////////
+		// Floor OBJECT
+		/////////////////////////////
+		var geometry = new THREE.PlaneGeometry(20, 10);
+		var loader = new THREE.TextureLoader().load('content/table.jpg', (imgLoader) => {});
+		//Load the image into a custom material
+		var material = new THREE.MeshLambertMaterial({
+		  map: loader
+		});
+		
+		var floor = new THREE.Mesh(geometry, material);
+		floor.rotation.x = - Math.PI / 2;
+		floor.position.y = -0.01;
+		arWorldRoot.add(floor);
+
+
+		//////////////////////////////////////////////////////////////////////////////////
+		//		render the whole thing on the page
+		//////////////////////////////////////////////////////////////////////////////////
+
+		// render the arWorldRoot
+		onRenderFcts.push(function(){
+			renderer.render( arWorldRoot, camera );
+		})
+
+		// run the rendering loop
+		var lastTimeMsec= null
+		requestAnimationFrame(function animate(nowMsec){
+			// keep looping
+			requestAnimationFrame( animate );
+			controls.update(); // only required if controls.enableDamping = true, or if controls.autoRotate = true
+			// measure time
+			lastTimeMsec	= lastTimeMsec || nowMsec-1000/60
+			var deltaMsec	= Math.min(200, nowMsec - lastTimeMsec)
+			lastTimeMsec	= nowMsec
+			// call each update function
+			onRenderFcts.forEach(function(onRenderFct){
+				onRenderFct(deltaMsec/1000, nowMsec/1000)
+			})
+		})
+
+		document.addEventListener( 'mousedown', onDocumentMouseDown, false );
+		document.addEventListener( 'touchstart', onDocumentTouchStart, false );
+
+		function onDocumentTouchStart( event ) {
+
+				event.preventDefault();
+
+				event.clientX = event.touches[0].clientX;
+				event.clientY = event.touches[0].clientY;
+				onDocumentMouseDown( event );
+
+		}
+
+		function onDocumentMouseDown( event ) {
+
+			event.preventDefault();
+
+			mouse.x = ( event.clientX / window.innerWidth ) * 2 - 1;
+			mouse.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
+
+			raycaster.setFromCamera( mouse, camera );
+
+			var fbArray = [fb];
+			var twArray = [tw];
+			var lkdArray = [lkd];
+			var ytbArray = [ytb];
+
+			var fbIntersects = raycaster.intersectObjects(  fbArray  );
+			var twIntersects = raycaster.intersectObjects(  twArray  );
+			var lkdIntersects = raycaster.intersectObjects( lkdArray );
+			var ytbIntersects = raycaster.intersectObjects( ytbArray );
+
+			if ( fbIntersects.length > 0) {
+				window.location.href = 'https://www.facebook.com/magicstickr';
+			}else if(twIntersects.length > 0){
+				window.location.href = 'https://twitter.com/yannlucklein';
+			}else if(lkdIntersects.length > 0){
+				window.location.href = 'https://www.linkedin.com/in/yann-klein/';
+			}else if(ytbIntersects.length > 0){
+				window.location.href = 'https://www.youtube.com/user/levraiyanou';
+			}
+		}
+		</script>
+	</body>
+</html>
