@@ -1,6 +1,6 @@
 # I am Yann 
 
-An AR busniess card simple example to enjoy with you phone.
+An AR business card simple example to enjoy with you phone.
 
 ## 
 
